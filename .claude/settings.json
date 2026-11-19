@@ -14,9 +14,15 @@
       {
         "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Glob|Grep|Bash|PowerShell",
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteger_env.py\"" }
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/proteger_env.py"],
+            "onFailure": "block"
+          }
         ]
       }
     ]
   }
 }
+
