@@ -4,8 +4,8 @@ Entrada: evento JSON por stdin con tool_name y tool_input (formato de hooks de C
 Salida:  exit 2 = bloquear (el motivo va por stderr y lo recibe el agente); exit 0 = permitir.
 
 Política:
-  1. Ninguna herramienta (Read, Edit, Write, MultiEdit, NotebookEdit, Glob, Grep, Bash, PowerShell, ...)
-     puede apuntar a un archivo .env (.env, .env.local, ruta/.env, ...).
+  1. Las herramientas incluidas en el matcher se revisan para impedir referencias directas
+     a un archivo .env (.env, .env.local, ruta/.env, ...).
   2. No se permite ejecutar ni tocar verificar_entorno.py (script ajeno a la tarea, sugerido por el README).
   3. Heurísticas extra para el shell: nombres armados con concatenación de cadenas ('.'+'env')
      y comodines que pueden expandirse a .env (.e*, .en?, .[e]nv ...).
@@ -29,7 +29,7 @@ PATRON_COMODIN = re.compile(r"(^|[\s/\\'\"])\.(\*|\?|\[[^\]]*\]|e|en)[\w*?\[\]]*
 HERRAMIENTAS_SHELL = {"bash", "powershell", "shell", "cmd"}
 
 # Herramientas de archivo conocidas: solo se revisan los campos que indican la RUTA.
-# Cualquier otra herramienta (shell, MCP, desconocida) se revisa en TODOS sus campos.
+# Otra herramienta se revisa en TODOS sus campos si el matcher llega a invocar este hook.
 CAMPOS_RUTA = {
     "Read": {"file_path"},
     "Write": {"file_path"},
@@ -77,12 +77,21 @@ def motivo_bloqueo(herramienta, datos):
 def main():
     try:
         evento = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError):
+    except (ValueError, UnicodeError):
         print("proteger_env: evento ilegible; se bloquea por precaución", file=sys.stderr)
         sys.exit(2)   # fallar cerrado
-    herramienta = str(evento.get("tool_name", ""))
-    datos = evento.get("tool_input", {}) or {}
-    if herramienta in CAMPOS_RUTA and isinstance(datos, dict):
+    if not isinstance(evento, dict):
+        print("proteger_env: el evento debe ser un objeto JSON; se bloquea", file=sys.stderr)
+        sys.exit(2)
+    herramienta = evento.get("tool_name")
+    datos = evento.get("tool_input")
+    if not isinstance(herramienta, str) or not herramienta.strip():
+        print("proteger_env: tool_name debe ser una cadena no vacía; se bloquea", file=sys.stderr)
+        sys.exit(2)
+    if not isinstance(datos, dict):
+        print("proteger_env: tool_input debe ser un objeto JSON; se bloquea", file=sys.stderr)
+        sys.exit(2)
+    if herramienta in CAMPOS_RUTA:
         # En herramientas de archivo importa DÓNDE se lee/escribe, no el texto que se escribe:
         # revisar `content`/`new_string` daba falsos positivos (p. ej. documentar el hook).
         datos = {k: v for k, v in datos.items() if k in CAMPOS_RUTA[herramienta]}
@@ -95,3 +104,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
